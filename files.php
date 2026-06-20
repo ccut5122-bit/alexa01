@@ -2,8 +2,7 @@
 error_reporting(0);
 define('PASSWORD', 'Alexa');
 define('FB_URL', 'https://alexa-a6ad8-default-rtdb.firebaseio.com');
-define('UPLOAD_MAX', 50 * 1024 * 1024);
-define('FILES_DIR', __DIR__ . '/files');
+define('UPLOAD_MAX', 10 * 1024 * 1024);
 
 $auth = isset($_GET['pwd']) && $_GET['pwd'] === PASSWORD;
 if (!$auth) {
@@ -11,7 +10,38 @@ if (!$auth) {
     die(json_encode(['error' => 'auth_required']));
 }
 
-if (!is_dir(FILES_DIR)) { mkdir(FILES_DIR, 0777, true); @chmod(FILES_DIR, 0777); }
+function fbGet($path) {
+    $ch = curl_init(FB_URL . $path);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 30]);
+    $r = curl_exec($ch);
+    curl_close($ch);
+    return json_decode($r, true);
+}
+
+function fbPut($path, $data) {
+    $j = json_encode($data);
+    $ch = curl_init(FB_URL . $path);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST => 'PUT',
+        CURLOPT_POSTFIELDS => $j,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    curl_exec($ch);
+    curl_close($ch);
+}
+
+function fbDel($path) {
+    $ch = curl_init(FB_URL . $path);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST => 'DELETE',
+        CURLOPT_TIMEOUT => 10,
+    ]);
+    curl_exec($ch);
+    curl_close($ch);
+}
 
 $action = $_GET['action'] ?? '';
 
@@ -26,48 +56,29 @@ if ($action === 'upload' && isset($_FILES['file'])) {
         die(json_encode(['error' => 'file_too_large', 'max' => UPLOAD_MAX]));
     }
     $orig = basename($file['name']);
-    $ext = pathinfo($orig, PATHINFO_EXTENSION);
     $fid = uniqid() . '_' . bin2hex(random_bytes(4));
-    $fname = $fid . ($ext ? '.' . $ext : '');
-    $dest = FILES_DIR . '/' . $fname;
-    if (!move_uploaded_file($file['tmp_name'], $dest)) {
-        header('Content-Type: application/json');
-        die(json_encode(['error' => 'move_failed']));
-    }
+    $raw = file_get_contents($file['tmp_name']);
     $meta = [
         'name' => $orig,
-        'fname' => $fname,
         'size' => $file['size'],
-        'type' => $file['type'] ?: mime_content_type($dest),
+        'type' => $file['type'] ?: 'application/octet-stream',
         'uploaded' => date('Y-m-d H:i:s'),
-        'fid' => $fid,
+        'data' => base64_encode($raw),
     ];
-    $ch = curl_init(FB_URL . '/files/' . $fid . '.json');
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_CUSTOMREQUEST => 'PUT',
-        CURLOPT_POSTFIELDS => json_encode($meta),
-        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-        CURLOPT_TIMEOUT => 15,
-    ]);
-    curl_exec($ch);
-    curl_close($ch);
+    fbPut('/files/' . $fid . '.json', $meta);
+    $out = $meta; unset($out['data']);
+    $out['fid'] = $fid;
     header('Content-Type: application/json');
-    die(json_encode(['ok' => true, 'file' => $meta]));
+    die(json_encode(['ok' => true, 'file' => $out]));
 }
 
 if ($action === 'list') {
-    $ch = curl_init(FB_URL . '/files.json');
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 15,
-    ]);
-    $data = curl_exec($ch);
-    curl_close($ch);
-    $files = json_decode($data, true) ?: [];
+    $files = fbGet('/files.json') ?: [];
     $list = [];
     foreach ($files as $fid => $f) {
         if (is_array($f) && isset($f['name'])) {
+            unset($f['data']);
+            $f['fid'] = $fid;
             $f['url'] = '?pwd=' . PASSWORD . '&action=dl&fid=' . $fid;
             $list[] = $f;
         }
@@ -79,38 +90,25 @@ if ($action === 'list') {
 
 if ($action === 'dl' && isset($_GET['fid'])) {
     $fid = preg_replace('/[^a-zA-Z0-9_]/', '', $_GET['fid']);
-    $ch = curl_init(FB_URL . '/files/' . $fid . '.json');
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 10,
-    ]);
-    $meta = json_decode(curl_exec($ch), true);
-    curl_close($ch);
-    if (!$meta || !isset($meta['fname'])) {
+    $meta = fbGet('/files/' . $fid . '.json');
+    if (!$meta || !isset($meta['data'])) {
         header('Content-Type: application/json');
         die(json_encode(['error' => 'not_found']));
     }
-    $path = FILES_DIR . '/' . $meta['fname'];
-    if (!file_exists($path)) {
+    $raw = base64_decode($meta['data'], true);
+    if ($raw === false) {
         header('Content-Type: application/json');
-        die(json_encode(['error' => 'file_missing']));
+        die(json_encode(['error' => 'corrupt']));
     }
     header('Content-Type: ' . ($meta['type'] ?: 'application/octet-stream'));
     header('Content-Disposition: attachment; filename="' . $meta['name'] . '"');
-    header('Content-Length: ' . filesize($path));
-    readfile($path);
+    header('Content-Length: ' . strlen($raw));
+    echo $raw;
     exit;
 }
 
 if ($action === 'dlall') {
-    $ch = curl_init(FB_URL . '/files.json');
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 15,
-    ]);
-    $data = curl_exec($ch);
-    curl_close($ch);
-    $files = json_decode($data, true) ?: [];
+    $files = fbGet('/files.json') ?: [];
     $zip = new ZipArchive();
     $tmp = tempnam(sys_get_temp_dir(), 'z_');
     @unlink($tmp);
@@ -120,10 +118,10 @@ if ($action === 'dlall') {
     }
     $count = 0;
     foreach ($files as $fid => $f) {
-        if (!is_array($f) || !isset($f['fname'])) continue;
-        $path = FILES_DIR . '/' . $f['fname'];
-        if (file_exists($path)) {
-            $zip->addFile($path, $f['name']);
+        if (!is_array($f) || !isset($f['data'])) continue;
+        $raw = base64_decode($f['data'], true);
+        if ($raw !== false) {
+            $zip->addFromString($f['name'], $raw);
             $count++;
         }
     }
@@ -143,54 +141,31 @@ if ($action === 'dlall') {
 
 if ($action === 'delete' && isset($_GET['fid'])) {
     $fid = preg_replace('/[^a-zA-Z0-9_]/', '', $_GET['fid']);
-    $ch = curl_init(FB_URL . '/files/' . $fid . '.json');
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 10,
-    ]);
-    $meta = json_decode(curl_exec($ch), true);
-    curl_close($ch);
-    if ($meta && isset($meta['fname'])) {
-        $path = FILES_DIR . '/' . $meta['fname'];
-        if (file_exists($path)) unlink($path);
-    }
-    $ch = curl_init(FB_URL . '/files/' . $fid . '.json');
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_CUSTOMREQUEST => 'DELETE',
-        CURLOPT_TIMEOUT => 10,
-    ]);
-    curl_exec($ch);
-    curl_close($ch);
+    fbDel('/files/' . $fid . '.json');
     header('Content-Type: application/json');
     die(json_encode(['ok' => true]));
 }
 
 if ($action === 'img' && isset($_GET['fid'])) {
     $fid = preg_replace('/[^a-zA-Z0-9_]/', '', $_GET['fid']);
-    $ch = curl_init(FB_URL . '/files/' . $fid . '.json');
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 10,
-    ]);
-    $meta = json_decode(curl_exec($ch), true);
-    curl_close($ch);
-    if (!$meta || !isset($meta['fname'])) {
+    $meta = fbGet('/files/' . $fid . '.json');
+    if (!$meta || !isset($meta['data'])) {
         header('Content-Type: application/json');
         die(json_encode(['error' => 'not_found']));
     }
-    $path = FILES_DIR . '/' . $meta['fname'];
-    if (!file_exists($path)) {
-        header('Content-Type: application/json');
-        die(json_encode(['error' => 'file_missing']));
-    }
-    $mt = mime_content_type($path);
-    if (strpos($mt, 'image/') !== 0 && strpos($mt, 'video/') !== 0) {
+    $t = $meta['type'] ?? '';
+    if (strpos($t, 'image/') !== 0 && strpos($t, 'video/') !== 0) {
         header('Content-Type: application/json');
         die(json_encode(['error' => 'not_media']));
     }
-    header('Content-Type: ' . $mt);
-    readfile($path);
+    $raw = base64_decode($meta['data'], true);
+    if ($raw === false) {
+        header('Content-Type: application/json');
+        die(json_encode(['error' => 'corrupt']));
+    }
+    header('Content-Type: ' . $t);
+    header('Content-Length: ' . strlen($raw));
+    echo $raw;
     exit;
 }
 
