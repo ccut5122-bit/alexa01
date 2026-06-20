@@ -1,4 +1,5 @@
 <?php
+error_reporting(0);
 define('PASSWORD', 'Alexa');
 define('FB_URL', 'https://alexa-a6ad8-default-rtdb.firebaseio.com');
 define('UPLOAD_MAX', 50 * 1024 * 1024);
@@ -111,7 +112,8 @@ if ($action === 'dlall') {
     curl_close($ch);
     $files = json_decode($data, true) ?: [];
     $zip = new ZipArchive();
-    $tmp = tempnam(sys_get_temp_dir(), 'files_');
+    $tmp = tempnam(sys_get_temp_dir(), 'z_');
+    @unlink($tmp);
     if ($zip->open($tmp, ZipArchive::CREATE) !== true) {
         header('Content-Type: application/json');
         die(json_encode(['error' => 'zip_failed']));
@@ -127,7 +129,7 @@ if ($action === 'dlall') {
     }
     $zip->close();
     if ($count === 0) {
-        unlink($tmp);
+        @unlink($tmp);
         header('Content-Type: application/json');
         die(json_encode(['error' => 'no_files']));
     }
@@ -135,7 +137,7 @@ if ($action === 'dlall') {
     header('Content-Disposition: attachment; filename="all_files_' . date('Ymd') . '.zip"');
     header('Content-Length: ' . filesize($tmp));
     readfile($tmp);
-    unlink($tmp);
+    @unlink($tmp);
     exit;
 }
 
