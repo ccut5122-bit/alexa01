@@ -10,7 +10,7 @@ if (!$auth) {
     die(json_encode(['error' => 'auth_required']));
 }
 
-if (!is_dir(FILES_DIR)) mkdir(FILES_DIR, 0755, true);
+if (!is_dir(FILES_DIR)) { mkdir(FILES_DIR, 0777, true); @chmod(FILES_DIR, 0777); }
 
 $action = $_GET['action'] ?? '';
 
