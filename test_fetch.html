@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html><body>
+<script>
+function fbGet(url){
+  return fetch(url,{cache:'no-store'}).then(function(r){if(!r.ok)return null;return r.json()}).catch(function(e){console.log('fetch error',e);return null})
+}
+var DBs = {
+  ADMIN_V5: 'https://pmsjdj-default-rtdb.firebaseio.com',
+  Darknet: 'https://darknet-26b68-default-rtdb.firebaseio.com',
+};
+var promises = [];
+Object.keys(DBs).forEach(function(name){
+  var base = DBs[name];
+  promises.push(Promise.all([
+    fbGet(base+'/user_data.json').then(function(d){return{name:name,type:'ud',data:d}}),
+    fbGet(base+'/status.json').then(function(d){return{name:name,type:'st',data:d}}),
+  ]));
+});
+Promise.all(promises).then(function(results){
+  var flat = [].concat.apply([], results);
+  console.log('flat length:', flat.length);
+  var all = {};
+  flat.forEach(function(r){
+    var name=r.name,data=r.data;
+    if(!data) return;
+    if(r.type==='ud'){
+      Object.keys(data).forEach(function(id){
+        var v=data[id];
+        if(v&&typeof v==='object'&&!v.length){
+          if(!all[id]){all[id]=v}
+        }
+      });
+    }
+    if(r.type==='st'){
+      Object.keys(data).forEach(function(uid){
+        var v=data[uid];
+        if(v&&typeof v==='object'){
+          var did=v.uniqueid||uid;
+          if(!all[did]){all[did]={d_name:'Device',status:v.online?'online':'offline',timestamp:v.timestamp||0}}
+        }
+      });
+    }
+  });
+  console.log('Devices:', Object.keys(all).length);
+  document.body.innerHTML = '<h2>OK - '+Object.keys(all).length+' devices</h2>';
+}).catch(function(e){
+  console.log('SYNC ERROR', e);
+  document.body.innerHTML = '<h2>ERROR: '+e.message+'</h2>';
+});
+</script>
+</body></html>
