@@ -1,5 +1,5 @@
 FROM php:8.1-apache
 COPY . /var/www/html/
-RUN docker-php-ext-install curl json
-RUN a2enmod rewrite
+RUN apt-get update && apt-get install -y libcurl4-openssl-dev
+RUN docker-php-ext-install curl
 EXPOSE 80
