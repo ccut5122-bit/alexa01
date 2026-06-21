@@ -36,6 +36,15 @@ function send($id, $t, $e = []) {
   return tg('sendMessage', array_merge(['chat_id' => $id, 'text' => $t, 'parse_mode' => 'HTML'], $e));
 }
 
+// ====== WEBHOOK SETUP (visit bot.php?setup in browser) ======
+if (isset($_GET['setup'])) {
+  $url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . '/bot.php';
+  $r = tg('setWebhook', ['url' => $url]);
+  header('Content-Type: application/json');
+  echo json_encode(['status' => $r ? 'ok' : 'error', 'result' => $r, 'webhook_url' => $url]);
+  exit;
+}
+
 $input = json_decode(file_get_contents('php://input'), true);
 if (!$input) die('ok');
 
