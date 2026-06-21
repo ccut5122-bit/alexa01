@@ -1,6 +1,8 @@
 <?php
+if (!isset($_GET['old'])) { header('Location: panel.php'); exit; }
 define('PASSWORD', 'Alexa');
 ?><!DOCTYPE html>
+<html lang="en">
 <html lang="en">
 <head>
 <meta charset="UTF-8">
